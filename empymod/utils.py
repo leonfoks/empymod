@@ -30,7 +30,6 @@ This module consists of four groups of functions:
 
 
 # Mandatory imports
-import warnings
 import numpy as np
 from scipy import special
 from datetime import timedelta
@@ -50,11 +49,11 @@ from empymod import filters, transform
 
 
 __all__ = ['EMArray', 'check_time_only', 'check_time', 'check_model',
-           'check_frequency', 'check_hankel', 'check_opt', 'check_dipole',
+           'check_frequency', 'check_hankel', 'check_loop', 'check_dipole',
            'check_bipole', 'check_ab', 'check_solution', 'get_abs',
            'get_geo_fact', 'get_azm_dip', 'get_off_ang', 'get_layer_nr',
            'printstartfinish', 'conv_warning', 'set_minimum', 'get_minimum',
-           'opt_backwards_hankel', 'Report', 'Versions', 'versions']
+           'Report']
 
 # 0. General settings
 
@@ -102,10 +101,8 @@ class EMArray(np.ndarray):
 
     """
 
-    def __new__(cls, data, backwards_comp=None):
+    def __new__(cls, data):
         r"""Create a new EMArray."""
-        if np.any(backwards_comp):  # Delete for v2.0.0
-            data = np.asarray(data) + 1j*np.asarray(backwards_comp)
         return np.asarray(data).view(cls)
 
     @property
@@ -826,8 +823,8 @@ def check_model(depth, res, aniso, epermH, epermV, mpermH, mpermV, xdirect,
     return depth, res, aniso, epermH, epermV, mpermH, mpermV, isfullspace
 
 
-def check_opt(loop, ht, htarg, verb):
-    r"""Check optimization parameters.
+def check_loop(loop, ht, htarg, verb):
+    r"""Check loop parameter.
 
     This check-function is called from one of the modelling routines in
     :mod:`model`.  Consult these modelling routines for a detailed description
@@ -871,7 +868,7 @@ def check_opt(loop, ht, htarg, verb):
         loop_off = loop == 'off'
         loop_freq = loop == 'freq'
 
-    # If verbose, print optimization information
+    # If verbose, print loop information
     if verb > 2:
 
         if loop_off:
@@ -1918,19 +1915,7 @@ def _check_targ(targ, keys):
     return targ
 
 
-# 5. Backwards compatibility
-
-def opt_backwards_hankel(opt):
-    """Raise deprecation warning for `opt`."""
-
-    # Issue warning
-    if opt is not None:
-        mesg = ("\n    The use of `opt` is deprecated and has no effect any " +
-                "longer.")
-        warnings.warn(mesg, DeprecationWarning)
-
-
-# 6. Report
+# 5. Report
 class Report(ScoobyReport):
     r"""Print date, time, and version information.
 
@@ -1993,21 +1978,3 @@ class Report(ScoobyReport):
 
         super().__init__(additional=add_pckg, core=core, optional=optional,
                          ncol=ncol, text_width=text_width, sort=sort)
-
-
-class Versions(Report):
-    r"""New name is `Report`, here for backwards compatibility."""
-    mesg = ("\n    Class `Versions` is deprecated and will " +
-            "be removed; use class `Report` instead.")
-    warnings.warn(mesg, DeprecationWarning)
-
-    def __init__(self, add_pckg=None, ncol=3):
-        super().__init__(add_pckg, ncol)
-
-
-def versions(mode=None, add_pckg=None, ncol=4):
-    r"""Old func-way of class `Report`, here for backwards compatibility."""
-    mesg = ("\n    Func `versions` is deprecated and will " +
-            "be removed; use class `Report` instead.")
-    warnings.warn(mesg, DeprecationWarning)
-    return Report(add_pckg, ncol)

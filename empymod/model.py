@@ -60,10 +60,9 @@ import numpy as np
 from empymod import kernel, transform
 from empymod.utils import (
         check_time, check_time_only, check_model, check_frequency,
-        check_hankel, check_opt, check_dipole, check_bipole, check_ab,
+        check_hankel, check_loop, check_dipole, check_bipole, check_ab,
         check_solution, get_abs, get_geo_fact, get_azm_dip, get_off_ang,
-        get_layer_nr, printstartfinish, conv_warning, opt_backwards_hankel,
-        EMArray)
+        get_layer_nr, printstartfinish, conv_warning, EMArray)
 
 __all__ = ['bipole', 'dipole', 'loop', 'analytical', 'gpr', 'dipole_k', 'fem',
            'tem', 'wavenumber']
@@ -72,8 +71,7 @@ __all__ = ['bipole', 'dipole', 'loop', 'analytical', 'gpr', 'dipole_k', 'fem',
 def bipole(src, rec, depth, res, freqtime, signal=None, aniso=None,
            epermH=None, epermV=None, mpermH=None, mpermV=None, msrc=False,
            srcpts=1, mrec=False, recpts=1, strength=0, xdirect=False,
-           ht='fht', htarg=None, ft='sin', ftarg=None, opt=None, loop=None,
-           verb=2):
+           ht='fht', htarg=None, ft='sin', ftarg=None, loop=None, verb=2):
     r"""Return EM fields due to arbitrary rotated, finite length EM dipoles.
 
     Calculate the electromagnetic frequency- or time-domain field due to
@@ -294,9 +292,6 @@ def bipole(src, rec, depth, res, freqtime, signal=None, aniso=None,
         However, if provided as list, you have to follow the order given above.
         See ``htarg`` for a few examples.
 
-    opt : None
-        Deprecated parameter; will be removed.
-
     loop : {None, 'freq', 'off'}, optional
         Define if to calculate everything vectorized or if to loop over
         frequencies ('freq') or over offsets ('off'), default is None. It
@@ -395,9 +390,6 @@ def bipole(src, rec, depth, res, freqtime, signal=None, aniso=None,
 
     # === 2.  CHECK INPUT ============
 
-    # Backwards compatibility
-    opt_backwards_hankel(opt)
-
     # Check times and Fourier Transform arguments and get required frequencies
     if signal is None:
         freq = freqtime
@@ -423,8 +415,8 @@ def bipole(src, rec, depth, res, freqtime, signal=None, aniso=None,
     # Check Hankel transform parameters
     ht, htarg = check_hankel(ht, htarg, verb)
 
-    # Check optimization
-    loop_freq, loop_off = check_opt(loop, ht, htarg, verb)
+    # Check loop
+    loop_freq, loop_off = check_loop(loop, ht, htarg, verb)
 
     # Check src and rec, get flags if dipole or not
     # nsrcz/nrecz are number of unique src/rec-pole depths
@@ -568,8 +560,7 @@ def bipole(src, rec, depth, res, freqtime, signal=None, aniso=None,
 
 def dipole(src, rec, depth, res, freqtime, signal=None, ab=11, aniso=None,
            epermH=None, epermV=None, mpermH=None, mpermV=None, xdirect=False,
-           ht='fht', htarg=None, ft='sin', ftarg=None, opt=None, loop=None,
-           verb=2):
+           ht='fht', htarg=None, ft='sin', ftarg=None, loop=None, verb=2):
     r"""Return EM fields due to infinitesimal small EM dipoles.
 
     Calculate the electromagnetic frequency- or time-domain field due to
@@ -783,9 +774,6 @@ def dipole(src, rec, depth, res, freqtime, signal=None, ab=11, aniso=None,
         However, if provided as list, you have to follow the order given above.
         See ``htarg`` for a few examples.
 
-    opt : None
-        Deprecated parameter; will be removed.
-
     loop : {None, 'freq', 'off'}, optional
         Define if to calculate everything vectorized or if to loop over
         frequencies ('freq') or over offsets ('off'), default is None. It
@@ -842,9 +830,6 @@ def dipole(src, rec, depth, res, freqtime, signal=None, ab=11, aniso=None,
 
     # === 2.  CHECK INPUT ============
 
-    # Backwards compatibility
-    opt_backwards_hankel(opt)
-
     # Check times and Fourier Transform arguments, get required frequencies
     # (freq = freqtime if ``signal=None``)
     if signal is not None:
@@ -871,8 +856,8 @@ def dipole(src, rec, depth, res, freqtime, signal=None, ab=11, aniso=None,
     # Check Hankel transform parameters
     ht, htarg = check_hankel(ht, htarg, verb)
 
-    # Check optimization
-    loop_freq, loop_off = check_opt(loop, ht, htarg, verb)
+    # Check loop
+    loop_freq, loop_off = check_loop(loop, ht, htarg, verb)
 
     # Check src-rec configuration
     # => Get flags if src or rec or both are magnetic (msrc, mrec)
@@ -919,7 +904,7 @@ def dipole(src, rec, depth, res, freqtime, signal=None, ab=11, aniso=None,
 def loop(src, rec, depth, res, freqtime, signal=None, aniso=None, epermH=None,
          epermV=None, mpermH=None, mpermV=None, mrec=True, recpts=1,
          strength=0, xdirect=False, ht='fht', htarg=None, ft='sin', ftarg=None,
-         opt=None, loop=None, verb=2):
+         loop=None, verb=2):
     r"""Return EM fields due to a magnetic source loop.
 
     Calculate the electromagnetic frequency- or time-domain field due to
@@ -1169,9 +1154,6 @@ def loop(src, rec, depth, res, freqtime, signal=None, aniso=None, epermH=None,
         However, if provided as list, you have to follow the order given above.
         See ``htarg`` for a few examples.
 
-    opt : None
-        Deprecated parameter; will be removed.
-
     loop : {None, 'freq', 'off'}, optional
         Define if to calculate everything vectorized or if to loop over
         frequencies ('freq') or over offsets ('off'), default is None. It
@@ -1291,8 +1273,8 @@ def loop(src, rec, depth, res, freqtime, signal=None, aniso=None, epermH=None,
     # Check Hankel transform parameters
     ht, htarg = check_hankel(ht, htarg, verb)
 
-    # Check optimization
-    loop_freq, loop_off = check_opt(loop, ht, htarg, verb)
+    # Check loop
+    loop_freq, loop_off = check_loop(loop, ht, htarg, verb)
 
     # Check src and rec, get flags if dipole or not
     # nsrcz/nrecz are number of unique src/rec-pole depths
@@ -1676,8 +1658,7 @@ def analytical(src, rec, res, freqtime, solution='fs', signal=None, ab=11,
 
 def gpr(src, rec, depth, res, freqtime, cf, gain=None, ab=11, aniso=None,
         epermH=None, epermV=None, mpermH=None, mpermV=None, xdirect=False,
-        ht='quad', htarg=None, ft='fft', ftarg=None, opt=None, loop=None,
-        verb=2):
+        ht='quad', htarg=None, ft='fft', ftarg=None, loop=None, verb=2):
     r"""Return Ground-Penetrating Radar signal.
 
     THIS FUNCTION IS EXPERIMENTAL, USE WITH CAUTION.
@@ -1723,7 +1704,7 @@ def gpr(src, rec, depth, res, freqtime, cf, gain=None, ab=11, aniso=None,
     # === 2. CALL DIPOLE ============
 
     EM = dipole(src, rec, depth, res, freq, None, ab, aniso, epermH, epermV,
-                mpermH, mpermV, xdirect, ht, htarg, ft, ftarg, opt, loop, verb)
+                mpermH, mpermV, xdirect, ht, htarg, ft, ftarg, loop, verb)
 
     # === 3. GPR STUFF
 

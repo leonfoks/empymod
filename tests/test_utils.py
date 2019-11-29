@@ -1,5 +1,4 @@
 import pytest
-import warnings
 import numpy as np
 from numpy.testing import assert_allclose
 
@@ -13,23 +12,17 @@ from empymod import utils, filters
 
 
 def test_emarray():
-    out = utils.EMArray(3)
-    assert out.amp == 3
-    assert out.pha == 0
-    assert out.real == 3
-    assert out.imag == 0
+    out = utils.EMArray([3+0j, 3+3j])
+    assert_allclose(out.amp, [3, np.sqrt(18)])
+    assert_allclose(out.pha, [0, 45])
+    assert_allclose(out.real, [3, 3])
+    assert_allclose(out.imag, [0, 3])
 
     out = utils.EMArray(1+1j)
     assert out.amp == np.sqrt(2)
     assert out.pha == 45.
     assert out.real == 1
     assert out.imag == 1
-
-    out = utils.EMArray([1+1j, 0+1j])
-    assert_allclose(out.amp, [np.sqrt(2), 1])
-    assert_allclose(out.pha, [45., 90.])
-    assert_allclose(out.real, [1, 0])
-    assert_allclose(out.imag, [1, 1])
 
 
 def test_check_ab(capsys):
@@ -377,32 +370,6 @@ def test_check_model(capsys):
     with pytest.raises(ValueError):
         utils.check_model(0, 1, [2, 2], [10, 10], [1, 1], [2, 2], [3, 3], True,
                           1)
-
-
-def test_check_opt(capsys):
-    fhtarg = [filters.kong_61_2007(), 43]
-    qwehtarg = [np.array(1e-12), np.array(1e-30), np.array(51), np.array(100),
-                np.array(33)]
-
-    res = utils.check_opt(None, 'fht', fhtarg, 4)
-    assert_allclose(res, (True, False))
-    out, _ = capsys.readouterr()
-    assert "   Loop over       :  Frequencies" in out
-
-    res = utils.check_opt('off', 'hqwe', qwehtarg, 4)
-    assert_allclose(res, (True, False))
-    out, _ = capsys.readouterr()
-    assert "   Loop over       :  Frequencies" in out
-
-    res = utils.check_opt('off', 'fht', [fhtarg[0], 0], 4)
-    assert_allclose(res, (False, True))
-    out, _ = capsys.readouterr()
-    assert "   Loop over       :  Offsets" in out
-
-    res = utils.check_opt('freq', 'hqwe', qwehtarg, 4)
-    assert_allclose(res, (True, False))
-    out, _ = capsys.readouterr()
-    assert "   Loop over       :  Frequencies" in out
 
 
 def test_check_time(capsys):
@@ -1001,19 +968,6 @@ def test_minimum():
     assert d['min_angle'] == 1e-5
 
 
-def test_opt_backwards_hankel(capsys):
-    warnings.filterwarnings('error')
-    out, _ = capsys.readouterr()  # Empty capsys
-
-    utils.opt_backwards_hankel(None)
-    out, _ = capsys.readouterr()
-    assert out == ""
-
-    with pytest.raises(DeprecationWarning):
-        utils.opt_backwards_hankel('parallel')
-    warnings.filterwarnings('default')
-
-
 def test_report(capsys):
     out, _ = capsys.readouterr()  # Empty capsys
 
@@ -1033,34 +987,3 @@ def test_report(capsys):
         _ = utils.Report()
         out, _ = capsys.readouterr()  # Empty capsys
         assert 'WARNING :: `empymod.Report` requires `scooby`' in out
-
-
-def test_versions_backwards():
-    if scooby:
-        out1 = utils.Report()
-        out2 = utils.Versions()
-        out3 = utils.versions()
-
-        # Exclude minutes and seconds, to avoid stupid failures.
-        assert out1.__repr__()[150:] == out2.__repr__()[150:]
-        assert out1.__repr__()[150:] == out3.__repr__()[150:]
-
-
-def test_emarray_backwards():
-    out = utils.EMArray(3)
-    assert out.amp == 3
-    assert out.pha == 0
-    assert out.real == 3
-    assert out.imag == 0
-
-    out = utils.EMArray(1, 1)
-    assert out.amp == np.sqrt(2)
-    assert out.pha == 45.
-    assert out.real == 1
-    assert out.imag == 1
-
-    out = utils.EMArray([1, 0], [1, 1])
-    assert_allclose(out.amp, [np.sqrt(2), 1])
-    assert_allclose(out.pha, [45., 90.])
-    assert_allclose(out.real, [1, 0])
-    assert_allclose(out.imag, [1, 1])
