@@ -45,19 +45,6 @@ except ImportError:
             print("\n* WARNING :: `empymod.Report` requires `scooby`."
                   "\n             Install it via `pip install scooby`.\n")
 
-# Optional imports
-try:
-    import numexpr
-    # Ensure Intel's Vector Math Library
-    if not numexpr.use_vml:
-        numexpr = False
-        numexpr_msg = "* WARNING :: `numexpr` is not installed with VML, "
-        numexpr_msg += "`opt=='parallel'` has no effect."
-except ImportError:
-    numexpr = False
-    numexpr_msg = "* WARNING :: `numexpr` is not installed, "
-    numexpr_msg += "`opt=='parallel'` has no effect."
-
 # Relative imports
 from empymod import filters, transform
 
@@ -67,7 +54,7 @@ __all__ = ['EMArray', 'check_time_only', 'check_time', 'check_model',
            'check_bipole', 'check_ab', 'check_solution', 'get_abs',
            'get_geo_fact', 'get_azm_dip', 'get_off_ang', 'get_layer_nr',
            'printstartfinish', 'conv_warning', 'set_minimum', 'get_minimum',
-           'spline_backwards_hankel', 'Report', 'Versions', 'versions']
+           'opt_backwards_hankel', 'Report', 'Versions', 'versions']
 
 # 0. General settings
 
@@ -839,7 +826,7 @@ def check_model(depth, res, aniso, epermH, epermV, mpermH, mpermV, xdirect,
     return depth, res, aniso, epermH, epermV, mpermH, mpermV, isfullspace
 
 
-def check_opt(opt, loop, ht, htarg, verb):
+def check_opt(loop, ht, htarg, verb):
     r"""Check optimization parameters.
 
     This check-function is called from one of the modelling routines in
@@ -848,9 +835,6 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     Parameters
     ----------
-    opt : {None, 'parallel'}
-        Optimization flag; use ``numexpr`` or not.
-
     loop : {None, 'freq', 'off'}
         Loop flag.
 
@@ -866,9 +850,6 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     Returns
     -------
-    use_ne_eval : bool
-        Boolean if to use ``numexpr``.
-
     loop_freq : bool
         Boolean if to loop over frequencies.
 
@@ -876,14 +857,6 @@ def check_opt(opt, loop, ht, htarg, verb):
         Boolean if to loop over offsets.
 
     """
-
-    # Check optimization flag
-    use_ne_eval = False
-    if opt == 'parallel':
-        if numexpr:
-            use_ne_eval = numexpr.evaluate
-        elif verb > 0:
-            print(numexpr_msg)
 
     # Define if to loop over frequencies or over offsets
     lagged_splined_fht = False
@@ -900,10 +873,6 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     # If verbose, print optimization information
     if verb > 2:
-        if use_ne_eval:
-            print("   Kernel Opt.     :  Use parallel")
-        else:
-            print("   Kernel Opt.     :  None")
 
         if loop_off:
             print("   Loop over       :  Offsets")
@@ -912,7 +881,7 @@ def check_opt(opt, loop, ht, htarg, verb):
         else:
             print("   Loop over       :  None (all vectorized)")
 
-    return use_ne_eval, loop_freq, loop_off
+    return loop_freq, loop_off
 
 
 def check_time(time, signal, ft, ftarg, verb):
@@ -1951,45 +1920,14 @@ def _check_targ(targ, keys):
 
 # 5. Backwards compatibility
 
-def spline_backwards_hankel(ht, htarg, opt):
-    r"""Check opt if deprecated 'spline' is used.
+def opt_backwards_hankel(opt):
+    """Raise deprecation warning for `opt`."""
 
-    Returns corrected htarg, opt.
-    r"""
-    # Ensure ht is all lowercase
-    ht = ht.lower()
-
-    # Only relevant for 'fht' and 'hqwe', not for 'quad'
-    if ht in ['fht', 'qwe', 'hqwe']:
-
-        # Get corresponding htarg
-        if ht == 'fht':
-            htarg = _check_targ(htarg, ['fhtfilt', 'pts_per_dec'])
-        elif ht in ['qwe', 'hqwe']:
-            htarg = _check_targ(htarg, ['rtol', 'atol', 'nquad', 'maxint',
-                                'pts_per_dec', 'diff_quad', 'a', 'b', 'limit'])
-
-        # If spline (qwe, fht) or lagged (fht)
-        if opt == 'spline':
-
-            # Issue warning
-            mesg = ("\n    The use of `opt='spline'` is deprecated and will " +
-                    "be removed\n    in v2.0.0; use the corresponding " +
-                    "setting in `htarg`.")
-            warnings.warn(mesg, DeprecationWarning)
-
-            # Reset opt
-            opt = None
-
-            # Check pts_per_dec; set to old default values if not given
-            if 'pts_per_dec' not in htarg:
-                if ht == 'fht':
-                    htarg['pts_per_dec'] = -1  # Lagged Convolution DLF
-
-                elif ht in ['qwe', 'hqwe']:
-                    htarg['pts_per_dec'] = 80  # Splined QWE; old default value
-
-    return htarg, opt
+    # Issue warning
+    if opt is not None:
+        mesg = ("\n    The use of `opt` is deprecated and has no effect any " +
+                "longer.")
+        warnings.warn(mesg, DeprecationWarning)
 
 
 # 6. Report
@@ -2000,11 +1938,11 @@ class Report(ScoobyReport):
     environment (Jupyter notebook, IPython console, Python console, QT
     console), either as html-table (notebook) or as plain text (anywhere).
 
-    Always shown are the OS, number of CPU(s), ``numpy``, ``scipy``,
+    Always shown are the OS, number of CPU(s), ``numpy``, ``scipy``, ``numba``,
     ``empymod``, ``sys.version``, and time/date.
 
-    Additionally shown are, if they can be imported, ``numexpr``, ``IPython``,
-    and ``matplotlib``. It also shows MKL information, if available.
+    Additionally shown are, if they can be imported, ``IPython``, and
+    ``matplotlib``. It also shows MKL information, if available.
 
     All modules provided in ``add_pckg`` are also shown.
 
@@ -2048,10 +1986,10 @@ class Report(ScoobyReport):
         """Initiate a scooby.Report instance."""
 
         # Mandatory packages.
-        core = ['numpy', 'scipy', 'empymod']
+        core = ['numpy', 'scipy', 'numba', 'empymod']
 
         # Optional packages.
-        optional = ['numexpr', 'IPython', 'matplotlib']
+        optional = ['IPython', 'matplotlib']
 
         super().__init__(additional=add_pckg, core=core, optional=optional,
                          ncol=ncol, text_width=text_width, sort=sort)

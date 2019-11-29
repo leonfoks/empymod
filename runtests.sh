@@ -12,7 +12,7 @@ where:
     -v : Python 3.x version, e.g. '-v 6' for Python 3.6. Default: '5 6 7'.
     -c : Use channel 'conda-forge' instead of channel 'defaults'.
     -p : Print output of conda.
-    -n : Run tests without numexpr/matplotlib/IPython.
+    -n : Run tests without matplotlib/IPython.
     -d : Delete environments after tests
     -w : Disable warnings
 
@@ -22,9 +22,9 @@ where:
 CHAN=defaults
 PYTHON3VERSION="5 6 7"
 PRINT="/dev/null"
-PCKGS="numpy scipy pytest pytest-cov"
-NMXPR="numexpr matplotlib IPython"
-STR2="**  WITH numexpr/matplotlib/IPython  "
+PCKGS="numpy scipy numba pytest pytest-cov"
+NMXPR="matplotlib IPython"
+STR2="**  WITH matplotlib/IPython  "
 PROPS="--mpl --flake8"
 INST="pytest-flake8 pytest-mpl scooby"
 SD="_soft-dep"
@@ -44,7 +44,7 @@ while getopts "hv:cpndw" opt; do
     p) PRINT="/dev/tty"
        ;;
     n) NMXPR=""
-       STR2="**  NO numexpr/matplotlib/IPython  "
+       STR2="**  NO matplotlib/IPython  "
        PROPS="--flake8"
        INST="pytest-flake8"
        SD=""
