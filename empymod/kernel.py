@@ -41,6 +41,9 @@ np.seterr(all='ignore')
 __all__ = ['wavenumber', 'angle_factor', 'fullspace', 'greenfct',
            'reflections', 'fields', 'halfspace']
 
+from numba import jit
+_numba_settings = {'nopython': True, 'nogil': False, 'fastmath': True, 'cache': True}
+
 
 # Wavenumber-frequency domain kernel
 
@@ -310,69 +313,307 @@ def reflections(depth, e_zH, Gam, lrec, lsrc):
 
     """
 
-    # Loop over Rp, Rm
-    for plus in [True, False]:
-
-        # Switches depending if plus or minus
-        if plus:
-            pm = 1
-            layer_count = np.arange(depth.size-2, min(lrec, lsrc)-1, -1)
-            izout = abs(lsrc-lrec)
-            minmax = max(lrec, lsrc)
-        else:
-            pm = -1
-            layer_count = np.arange(1, max(lrec, lsrc)+1, 1)
-            izout = 0
-            minmax = -min(lrec, lsrc)
-
-        # If rec in last  and rec below src (plus) or
-        # if rec in first and rec above src (minus), shift izout
-        shiftplus = lrec < lsrc and lrec == 0 and not plus
-        shiftminus = lrec > lsrc and lrec == depth.size-1 and plus
-        if shiftplus or shiftminus:
-            izout -= pm
-
-        # Pre-allocate Ref
-        Ref = np.zeros((Gam.shape[0], Gam.shape[1], abs(lsrc-lrec)+1,
-                        Gam.shape[3]), dtype=Gam.dtype)
-
-        # Calculate the reflection
-        for iz in layer_count:
-
-            # Eqs 65, A-12
-            rloca = e_zH[:, None, iz+pm, None]*Gam[:, :, iz, :]
-            Gamp = Gam[:, :, iz+pm, :]
-            rlocb = e_zH[:, None, iz, None]*Gamp
-            rloc = (rloca - rlocb)/(rloca + rlocb)
-
-            # In first layer tRef = rloc
-            if iz == layer_count[0]:
-                tRef = rloc.copy()
-            else:
-                ddepth = depth[iz+1+pm]-depth[iz+pm]
-
-                # Eqs 64, A-11
-                term = tRef*np.exp(-2*Gamp*ddepth)
-                tRef = (rloc + term)/(1 + rloc*term)
-
-            # The global reflection coefficient is given back for all layers
-            # between and including src- and rec-layer
-            if lrec != lsrc and pm*iz <= minmax:
-                Ref[:, :, izout, :] = tRef[:]
-                izout -= pm
-
-        # If lsrc = lrec, we just store the last values
-        if lsrc == lrec and layer_count.size > 0:
-            Ref = tRef
-
-        # Store Ref in Rm/Rp
-        if plus:
-            Rm = Ref
-        else:
-            Rp = Ref
+    # Rm Term
+    layer_count = np.arange(depth.size-2, np.minimum(lrec, lsrc)-1, -1)
+    if lsrc == lrec and layer_count.size > 0:
+        Rm = Rm_3(depth, e_zH, Gam, lrec, lsrc)
+    else:
+        Rm = Rm_4(depth, e_zH, Gam, lrec, lsrc)
+    
+    layer_count = np.arange(1, np.maximum(lrec, lsrc)+1, 1)
+    if lsrc == lrec and layer_count.size > 0:
+        Rp = Rp_3(depth, e_zH, Gam, lrec, lsrc)
+    else:
+        Rp = Rp_4(depth, e_zH, Gam, lrec, lsrc)
 
     # Return reflections (minus and plus)
     return Rm, Rp
+
+
+@jit(**_numba_settings)
+def Rm_3(depth, e_zH, Gam, lrec, lsrc):
+
+    # Switches depending if plus or minus
+    layer_count = np.arange(len(depth)-2, np.minimum(lrec, lsrc)-1, -1)
+    nLayers = len(layer_count)
+    izout = np.abs(lsrc-lrec)
+    minmax = np.maximum(lrec, lsrc)
+
+    nA, nB, nC, nD = np.shape(Gam)
+    # Pre-allocate Ref
+    eTmp = np.empty(np.shape(e_zH[1]), dtype=np.complex128)
+    Rm = np.zeros((nA, nB, nD), dtype=np.complex128)
+    G1 = np.empty(nD, dtype=np.complex128)
+    G2 = np.empty(nD, dtype=np.complex128)
+
+    for i in range(nA):
+        eTmp[:] = e_zH[i, :]
+        for j in range(nB):
+            iz = layer_count[0]
+            iz1 = iz + 1
+            iz2 = iz + 2
+            e1 = eTmp[iz1]
+            e2 = eTmp[iz]
+            G1[:] = Gam[i, j, iz, :]
+            G2[:] = Gam[i, j, iz1, :]
+            for k in range(nD):
+                # Eqs 65, A-12
+                rloca = e1 * G1[k]
+                rlocb = e2 * G2[k]
+                Rm[i, j, k] = (rloca - rlocb) / (rloca + rlocb)
+
+            # Calculate the reflection
+            for l in range(1, nLayers):
+                iz = layer_count[l]
+                iz1 = iz + 1
+                iz2 = iz + 2
+                e1 = eTmp[iz1]
+                e2 = eTmp[iz]
+                ddepth = depth[iz2] - depth[iz1]
+                G1[:] = Gam[i, j, iz, :]
+                G2[:] = Gam[i, j, iz1, :]
+                for k in range(nD):
+                    # Eqs 65, A-12
+                    rloca = e1 * G1[k]
+                    Gamp = G2[k]
+                    rlocb = e2 * Gamp
+                    rloc = (rloca - rlocb) / (rloca + rlocb)
+
+                    # Eqs 64, A-11
+                    term = Rm[i, j, k] * np.exp(-2.0 * Gamp * ddepth)
+                    Rm[i, j, k] = (rloc + term) / (1 + rloc * term)
+
+    return Rm
+
+
+@jit(**_numba_settings)
+def Rm_4(depth, e_zH, Gam, lrec, lsrc):
+    # Switches depending if plus or minus
+    nDepths = len(depth)
+    layer_count = np.arange(nDepths-2, np.minimum(lrec, lsrc)-1, -1)
+    nLayers = len(layer_count)
+
+    # Pre-allocate Ref
+    nA, nB, nC, nD = np.shape(Gam)
+    # Pre-allocate Ref
+    eTmp = np.empty(np.shape(e_zH[1]), dtype=np.complex128)
+    Rm = np.zeros((nA, nB, abs(lsrc-lrec)+1, nD), dtype=np.complex128)
+
+    if nLayers > 0:
+        izout1 = np.abs(lsrc-lrec)
+        minmax = np.maximum(lrec, lsrc)
+
+        # If rec in last  and rec below src (plus) or
+        # if rec in first and rec above src (minus), shift izout
+        shift = (lrec == nDepths-1)
+        if shift:
+            izout1 -= 1
+
+        izout = izout1
+
+        
+        eTmp = np.empty(np.shape(e_zH[1]), dtype=np.complex128)
+        G1 = np.empty(nD, dtype=np.complex128)
+        G2 = np.empty(nD, dtype=np.complex128)
+        tRef = np.zeros((nA, nB, nD), dtype=np.complex128)
+
+        for i in range(nA):
+            eTmp[:] = e_zH[i, :]
+            for j in range(nB):
+                izout = izout1
+                iz = layer_count[0]
+                transfer = iz <= minmax
+                iz1 = iz + 1
+                iz2 = iz + 2
+                e1 = eTmp[iz1]
+                e2 = eTmp[iz]
+                G1[:] = Gam[i, j, iz, :]
+                G2[:] = Gam[i, j, iz1, :]
+                for k in range(nD):
+                    # Eqs 65, A-12
+                    rloca = e1 * G1[k]
+                    rlocb = e2 * G2[k]
+                    tRef[i, j, k] = (rloca - rlocb) / (rloca + rlocb)
+
+                    if transfer:
+                        Rm[i, j, izout, k] = tRef[i, j, k]
+                if transfer:
+                    izout -= 1
+
+                # Calculate the reflection
+                for l in range(1, nLayers):
+                    iz = layer_count[l]
+                    transfer = iz <= minmax
+                    iz1 = iz + 1
+                    iz2 = iz + 2
+                    e1 = eTmp[iz1]
+                    e2 = eTmp[iz]
+                    ddepth = depth[iz2] - depth[iz1]
+                    G1[:] = Gam[i, j, iz, :]
+                    G2[:] = Gam[i, j, iz1, :]
+                    for k in range(nD):
+                        # Eqs 65, A-12
+                        rloca = e1 * G1[k]
+                        Gamp = G2[k]
+                        rlocb = e2 * Gamp
+                        rloc = (rloca - rlocb) / (rloca + rlocb)
+
+                        # Eqs 64, A-11
+                        term = tRef[i, j, k] * np.exp(-2.0 * Gamp * ddepth)
+                        tRef[i, j, k] = (rloc + term) / (1 + rloc * term)
+
+                        if transfer:
+                            Rm[i, j, izout, k] = tRef[i, j, k]
+                    if transfer:
+                        izout -= 1
+
+    return Rm
+
+@jit(**_numba_settings)
+def Rp_3(depth, e_zH, Gam, lrec, lsrc):
+# Switches depending if plus or minus
+    layer_count = np.arange(1, np.maximum(lrec, lsrc)+1, 1)
+    nLayerCount = len(layer_count)
+    izout = 0
+    minmax = -np.minimum(lrec, lsrc)
+
+    # If rec in last  and rec below src (plus) or
+    # if rec in first and rec above src (minus), shift izout
+    shift = lrec < lsrc and lrec == 0
+    if shift:
+        izout += 1
+
+    # Pre-allocate Ref
+    nA, nB, nC, nD = np.shape(Gam)
+    # Pre-allocate Ref
+    eTmp = np.empty(np.shape(e_zH[1]), dtype=np.complex128)
+    Rp = np.zeros((nA, nB, nD), dtype=np.complex128)
+    G1 = np.empty(nD, dtype=np.complex128)
+    G2 = np.empty(nD, dtype=np.complex128)
+
+    for i in range(nA):
+        eTmp[:] = e_zH[i, :]
+        for j in range(nB):
+
+            iz = layer_count[0]
+            iz1 = iz - 1
+            e1 = eTmp[iz1]
+            e2 = eTmp[iz]
+            ddepth = depth[iz] - depth[iz1]
+            G1[:] = Gam[i, j, iz, :]
+            G2[:] = Gam[i, j, iz1, :]
+            for k in range(nD):
+                # Eqs 65, A-12
+                rloca = e1 * G1[k]
+                rlocb = e2 * G2[k]
+                rloc = (rloca - rlocb) / (rloca + rlocb)
+
+                Rp[i, j, k] = rloc
+
+            # Calculate the reflection
+            for l in range(1, nLayerCount):
+                iz = layer_count[l]
+                iz1 = iz - 1
+                e1 = eTmp[iz1]
+                e2 = eTmp[iz]
+                ddepth = depth[iz] - depth[iz1]
+                G1[:] = Gam[i, j, iz, :]
+                G2[:] = Gam[i, j, iz1, :]
+                for k in range(nD):
+
+                    # Eqs 65, A-12
+                    rloca = e1 * G1[k]
+                    Gamp = G2[k]
+                    rlocb = e2 * Gamp
+                    rloc = (rloca - rlocb) / (rloca + rlocb)
+
+                    # Eqs 64, A-11
+                    term = Rp[i, j, k] * np.exp(-2 * Gamp * ddepth)
+                    Rp[i, j, k] = (rloc + term) / (1 + rloc * term)
+
+    return Rp
+
+
+def Rp_4(depth, e_zH, Gam, lrec, lsrc):
+# Switches depending if plus or minus
+    layer_count = np.arange(1, np.maximum(lrec, lsrc)+1, 1)
+    nLayerCount = len(layer_count)
+
+    nA, nB, nC, nD = np.shape(Gam)
+    Rp = np.zeros((nA, nB, abs(lsrc-lrec)+1, nD), dtype=np.complex128)
+
+    if nLayerCount > 1:
+
+        izout1 = 0
+        minmax = -np.minimum(lrec, lsrc)
+
+        # If rec in last  and rec below src (plus) or
+        # if rec in first and rec above src (minus), shift izout
+        shift = lrec < lsrc and lrec == 0
+        if shift:
+            izout1 += 1
+
+        izout = izout1
+
+        nA, nB, nC, nD = np.shape(Gam)
+        eTmp = np.empty(np.shape(e_zH[1]), dtype=np.complex128)
+        tRef = np.zeros((nA, nB, nD), dtype=np.complex128)
+        G1 = np.empty(nD, dtype=np.complex128)
+        G2 = np.empty(nD, dtype=np.complex128)
+
+        for i in range(nA):
+            eTmp[:] = e_zH[i, :]
+            for j in range(nB):
+                izout = izout1
+                iz = layer_count[0]
+                transfer = lrec != lsrc and -iz <= minmax
+                iz1 = iz - 1
+                e1 = eTmp[iz1]
+                e2 = eTmp[iz]
+                ddepth = depth[iz] - depth[iz1]
+                G1[:] = Gam[i, j, iz, :]
+                G2[:] = Gam[i, j, iz1, :]
+                for k in range(nD):
+                    # Eqs 65, A-12
+                    rloca = e1 * G1[k]
+                    rlocb = e2 * G2[k]
+                    rloc = (rloca - rlocb) / (rloca + rlocb)
+
+                    tRef[i, j, k] = rloc
+
+                    if transfer:
+                        Rp[i, j, izout, k] = tRef[i, j, k]
+                if transfer:
+                    izout += 1
+
+                # Calculate the reflection
+                for l in range(1, nLayerCount):
+                    iz = layer_count[l]
+                    transfer = lrec != lsrc and -iz <= minmax
+                    iz1 = iz - 1
+                    e1 = eTmp[iz1]
+                    e2 = eTmp[iz]
+                    ddepth = depth[iz] - depth[iz1]
+                    G1[:] = Gam[i, j, iz, :]
+                    G2[:] = Gam[i, j, iz1, :]
+                    for k in range(nD):
+
+                        # Eqs 65, A-12
+                        rloca = e1 * G1[k]
+                        Gamp = G2[k]
+                        rlocb = e2 * Gamp
+                        rloc = (rloca - rlocb) / (rloca + rlocb)
+
+                        # Eqs 64, A-11
+                        term = tRef[i, j, k] * np.exp(-2 * Gamp * ddepth)
+                        tRef[i, j, k] = (rloc + term) / (1 + rloc * term)
+
+                        if transfer:
+                            Rp[i, j, izout, k] = tRef[i, j, k]
+                    if transfer:
+                        izout += 1
+
+    return Rp
 
 
 def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM):
